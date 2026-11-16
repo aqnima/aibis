@@ -1,4 +1,4 @@
-# Slim image: Python slim + Chromium only (no firefox/webkit, no bundled node driver extras).
+# Slim image: Python slim + Chromium only.
 FROM python:3.11-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
@@ -8,6 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
     AIBIS_DB_PATH=/data/leads_history.db
 
 WORKDIR /app
+
+# libatomic1 needed by Playwright's bundled Node driver on slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
