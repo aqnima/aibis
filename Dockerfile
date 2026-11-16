@@ -1,14 +1,18 @@
-# Playwright base image ships Chromium + all OS libs the scraper needs.
-FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy
-
-WORKDIR /app
+# Slim image: Python slim + Chromium only (no firefox/webkit, no bundled node driver extras).
+FROM python:3.11-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     AIBIS_DB_PATH=/data/leads_history.db
 
+WORKDIR /app
+
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.cache/pip
 
 COPY . .
 RUN mkdir -p /data /app/output
