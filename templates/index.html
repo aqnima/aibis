@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aibis &mdash; Mesin Ekstraksi Kontak Bisnis Google Maps</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.3/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>document.documentElement.dataset.theme = localStorage.getItem('aibis-theme') || 'light';</script>
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="min-h-screen flex flex-col bg-[var(--bg)] text-[var(--ink-2)]" x-data="scraperApp">
+
+    <!-- Header -->
+    <header class="w-full border-b border-[var(--rule)] bg-[var(--surface)] sticky top-0 z-40">
+        <div class="w-full max-w-[1600px] mx-auto px-6 lg:px-10 h-16 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-9 h-9 rounded-[10px] bg-[var(--accent)] text-[var(--accent-ink)] flex items-center justify-center font-heading font-bold text-lg shadow-sm">
+                    A
+                </div>
+                <div class="flex items-baseline gap-2.5 min-w-0">
+                    <h1 class="text-base font-heading text-[var(--ink)] whitespace-nowrap">Aibis</h1>
+                    <span class="hidden sm:inline text-xs text-[var(--muted)] border-l border-[var(--rule)] pl-2.5 truncate">Ekstraksi kontak Google Maps</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2.5">
+                <!-- Theme toggle -->
+                <button @click="toggleTheme"
+                        class="inline-flex items-center justify-center w-9 h-9 rounded-[10px] bg-[var(--surface-2)] border border-[var(--rule)] text-[var(--muted)] hover:text-[var(--ink)] hover:border-[#cbd5e1] transition"
+                        :title="theme === 'dark' ? 'Mode terang' : 'Mode gelap'">
+                    <i data-lucide="sun" class="w-4 h-4" x-show="theme === 'dark'"></i>
+                    <i data-lucide="moon" class="w-4 h-4" x-show="theme !== 'dark'"></i>
+                </button>
+                <!-- DB counter -->
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-2)] border border-[var(--rule)] rounded-[10px] text-xs">
+                    <i data-lucide="database" class="w-3.5 h-3.5 text-[var(--accent)]"></i>
+                    <span class="hidden sm:inline text-[var(--muted)]">Tersimpan</span>
+                    <strong class="font-figures text-[var(--ink)] text-xs" x-text="totalSavedInDb"></strong>
+                </div>
+
+                <button @click="clearDatabase"
+                        class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 btn-danger text-[11px]"
+                        title="Kosongkan seluruh riwayat database">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Kosongkan DB
+                </button>
+
+                <!-- Status pill -->
+                <div class="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-2)] border border-[var(--rule)] rounded-full text-xs">
+                    <span class="w-2 h-2 rounded-full inline-block"
+                          :class="{
+                              'bg-[var(--accent)] animate-pulse': status === 'running',
+                              'bg-[var(--faint)]': status === 'idle',
+                              'bg-[var(--ok)]': status === 'completed',
+                              'bg-[var(--danger)]': status === 'error'
+                          }"></span>
+                    <span class="text-[var(--ink-2)] font-medium"
+                          x-text="status === 'running' ? 'Memproses' : (status === 'completed' ? 'Selesai' : (status === 'error' ? 'Kendala' : 'Siap'))"></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="w-full max-w-[1600px] mx-auto px-6 lg:px-10 py-8 flex-1 space-y-6">
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+            <!-- Form -->
+            <div class="lg:col-span-5 formwork-plate p-6 space-y-5">
+                <div class="flex items-center justify-between border-b border-[var(--rule)] pb-3">
+                    <span class="text-sm font-heading text-[var(--ink)] flex items-center gap-2">
+                        <i data-lucide="sliders-horizontal" class="w-4 h-4 text-[var(--accent)]"></i>
+                        Parameter Penelusuran
+                    </span>
+                    <span class="text-[11px] text-[var(--ok)] flex items-center gap-1">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Anti-duplikasi
+                    </span>
+                </div>
+
+                <form @submit.prevent="startScraping" class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Jenis usaha / kategori</label>
+                        <input type="text" x-model="keyword" required placeholder="Contoh: Kedai Kopi, Bengkel, Apotek"
+                               :disabled="status === 'running'"
+                               class="w-full px-3.5 py-2.5 formwork-input text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Wilayah / kota</label>
+                        <input type="text" x-model="location" required placeholder="Contoh: Wonosobo, Bandung, Sleman"
+                               :disabled="status === 'running'"
+                               class="w-full px-3.5 py-2.5 formwork-input text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Target jumlah data baru (1&ndash;200)</label>
+                        <input type="number" x-model="limit" min="1" max="200"
+                               :disabled="status === 'running'"
+                               class="w-full px-3.5 py-2.5 formwork-input text-sm font-figures">
+                        <p class="text-[11px] text-[var(--muted)] mt-1.5">Data yang sudah tersimpan otomatis dilewati sehingga hasil selalu unik.</p>
+                    </div>
+
+                    <label class="flex items-start gap-3 cursor-pointer select-none rounded-[10px] p-3 bg-[var(--surface-2)] border border-[var(--rule)]">
+                        <input type="checkbox" x-model="enrichWebsite" :disabled="status === 'running'"
+                               class="w-4 h-4 mt-0.5 accent-[var(--accent)]">
+                        <span class="text-xs text-[var(--ink-2)] leading-relaxed">
+                            Telusuri situs web bisnis untuk mencari surel dan media sosial (Instagram / Facebook).
+                        </span>
+                    </label>
+
+                    <div class="pt-1 flex items-center gap-2.5">
+                        <button type="submit" :disabled="status === 'running'"
+                                class="flex-1 py-2.5 btn-formwork-primary text-sm flex items-center justify-center gap-2">
+                            <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                            Mulai penelusuran
+                        </button>
+
+                        <template x-if="status === 'running'">
+                            <button type="button" @click="stopScraping"
+                                    class="px-4 py-2.5 btn-danger text-sm">
+                                Hentikan
+                            </button>
+                        </template>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Metrics + Console -->
+            <div class="lg:col-span-7 space-y-4">
+
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <div class="formwork-plate p-4">
+                        <span class="text-[11px] text-[var(--muted)]">Terkumpul baru</span>
+                        <div class="text-2xl font-heading text-[var(--ink)] mt-1 font-figures" x-text="stats.total"></div>
+                    </div>
+                    <div class="formwork-plate p-4">
+                        <span class="text-[11px] text-[var(--muted)]">WhatsApp</span>
+                        <div class="text-2xl font-heading text-[var(--accent)] mt-1 font-figures"><span x-text="stats.phoneRate"></span>%</div>
+                    </div>
+                    <div class="formwork-plate p-4">
+                        <span class="text-[11px] text-[var(--muted)]">Situs web</span>
+                        <div class="text-2xl font-heading text-[var(--ink)] mt-1 font-figures"><span x-text="stats.webRate"></span>%</div>
+                    </div>
+                    <div class="formwork-plate p-4">
+                        <span class="text-[11px] text-[var(--muted)]">Medsos</span>
+                        <div class="text-2xl font-heading text-[var(--ink)] mt-1 font-figures"><span x-text="stats.socialRate"></span>%</div>
+                    </div>
+                    <div class="formwork-plate p-4">
+                        <span class="text-[11px] text-[var(--muted)]">Rerata bintang</span>
+                        <div class="text-2xl font-heading text-[var(--warn)] mt-1 font-figures" x-text="stats.avgRating || '-'"></div>
+                    </div>
+                </div>
+
+                <!-- Progress -->
+                <template x-if="status === 'running' || progress > 0">
+                    <div class="formwork-plate p-4 space-y-2">
+                        <div class="flex justify-between text-xs text-[var(--ink-2)]">
+                            <span>Proses data baru: <span class="font-figures font-medium text-[var(--ink)]" x-text="currentCount"></span> dari <span class="font-figures" x-text="limit"></span> target</span>
+                            <span class="font-figures text-[var(--accent)] font-medium" x-text="progress + '%'"></span>
+                        </div>
+                        <div class="w-full bg-[var(--surface-3)] h-2 rounded-full overflow-hidden">
+                            <div class="bg-[var(--accent)] h-full rounded-full transition-[width] duration-200"
+                                 :style="`width: ${progress}%`"></div>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Console -->
+                <div class="formwork-plate overflow-hidden">
+                    <div class="px-4 py-2.5 border-b border-[var(--rule)] bg-[var(--surface-2)] flex items-center justify-between text-xs">
+                        <span class="flex items-center gap-2 font-heading text-[var(--ink)]">
+                            <i data-lucide="terminal" class="w-4 h-4 text-[var(--accent)]"></i>
+                            Aktivitas sistem (<span class="font-figures" x-text="logs.length"></span>)
+                        </span>
+                        <span class="text-[10px] text-[var(--muted)]">Realtime</span>
+                    </div>
+                    <div class="p-3.5 bg-[var(--surface)] font-mono text-[var(--ink-2)] space-y-1 h-[150px] overflow-y-auto text-[11px] leading-relaxed">
+                        <template x-for="(log, idx) in logs" :key="idx">
+                            <div x-text="log"></div>
+                        </template>
+                        <template x-if="logs.length === 0">
+                            <div class="text-[var(--faint)] italic">Menunggu perintah penelusuran dari formulir di sebelah kiri.</div>
+                        </template>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Table plate -->
+        <div class="formwork-plate overflow-hidden">
+            <!-- Toolbar -->
+            <div class="p-4 border-b border-[var(--rule)] flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-3">
+                    <span class="font-heading text-sm text-[var(--ink)]">Daftar kontak bisnis</span>
+
+                    <div class="flex items-center border border-[var(--rule)] bg-[var(--surface-2)] p-0.5 rounded-[10px] text-xs">
+                        <button @click="filterType = 'all'; currentPage = 1"
+                                :class="filterType === 'all' ? 'tab-active' : 'text-[var(--muted)] hover:text-[var(--ink)]'"
+                                class="px-2.5 py-1 text-[11px] rounded-[7px] transition">Semua</button>
+                        <button @click="filterType = 'with_phone'; currentPage = 1"
+                                :class="filterType === 'with_phone' ? 'tab-active' : 'text-[var(--muted)] hover:text-[var(--ink)]'"
+                                class="px-2.5 py-1 text-[11px] rounded-[7px] transition">Ada WhatsApp</button>
+                        <button @click="filterType = 'with_web'; currentPage = 1"
+                                :class="filterType === 'with_web' ? 'tab-active' : 'text-[var(--muted)] hover:text-[var(--ink)]'"
+                                class="px-2.5 py-1 text-[11px] rounded-[7px] transition">Ada situs</button>
+                        <button @click="filterType = 'with_social'; currentPage = 1"
+                                :class="filterType === 'with_social' ? 'tab-active' : 'text-[var(--muted)] hover:text-[var(--ink)]'"
+                                class="px-2.5 py-1 text-[11px] rounded-[7px] transition">Surel / medsos</button>
+                    </div>
+
+                    <template x-if="selectedIds.length > 0">
+                        <button @click="deleteSelected"
+                                class="px-2.5 py-1 btn-danger text-[11px] flex items-center gap-1">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Hapus terpilih (<span x-text="selectedIds.length"></span>)
+                        </button>
+                    </template>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <button @click="loadSavedLeads"
+                            class="px-2.5 py-1.5 btn-formwork-secondary text-[11px] flex items-center gap-1.5"
+                            title="Tampilkan semua data yang tersimpan di database">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-[var(--accent)]"></i> Buka riwayat DB
+                    </button>
+
+                    <input type="text" x-model="searchFilter" @input="currentPage = 1" placeholder="Saring nama / kontak..."
+                           class="px-2.5 py-1.5 formwork-input text-xs w-48">
+
+                    <div class="flex items-center gap-1">
+                        <button @click="downloadExcel('current')" :disabled="leads.length === 0"
+                                class="px-2.5 py-1.5 btn-formwork-secondary text-[11px] flex items-center gap-1 disabled:opacity-40" title="Unduh data di tabel ini">
+                            <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-[var(--ok)]"></i> Excel
+                        </button>
+                        <button @click="downloadExcel('all')" :disabled="totalSavedInDb === 0"
+                                class="px-2.5 py-1.5 btn-formwork-primary text-[11px] flex items-center gap-1 disabled:opacity-40" title="Unduh seluruh akumulasi data unik">
+                            <i data-lucide="archive" class="w-3.5 h-3.5"></i> Semua DB
+                        </button>
+                        <button @click="downloadCSV('current')" :disabled="leads.length === 0"
+                                class="px-2.5 py-1.5 btn-formwork-secondary text-[11px] flex items-center gap-1 disabled:opacity-40">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i> CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-[var(--surface-2)] text-[var(--muted)] text-[10px] font-heading border-b border-[var(--rule)]">
+                        <tr>
+                            <th class="px-4 py-3 w-10 text-center">
+                                <input type="checkbox"
+                                       @change="toggleSelectAll"
+                                       :checked="isAllOnPageSelected"
+                                       class="accent-[var(--accent)] cursor-pointer">
+                            </th>
+                            <th class="px-5 py-3">Nama bisnis &amp; kategori</th>
+                            <th class="px-5 py-3">Nomor kontak</th>
+                            <th class="px-5 py-3">Penilaian</th>
+                            <th class="px-5 py-3">Situs &amp; saluran digital</th>
+                            <th class="px-5 py-3">Alamat lengkap</th>
+                            <th class="px-5 py-3 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[var(--rule-light)] bg-[var(--surface)]">
+                        <template x-for="lead in paginatedLeads" :key="lead.id">
+                            <tr class="hover:bg-[var(--surface-2)] transition-colors" :class="selectedIds.includes(lead.id) ? 'bg-[var(--accent-soft)]' : ''">
+                                <td class="px-4 py-3.5 text-center">
+                                    <input type="checkbox" :value="lead.id" x-model="selectedIds"
+                                           class="accent-[var(--accent)] cursor-pointer">
+                                </td>
+
+                                <td class="px-5 py-3.5">
+                                    <div class="font-semibold text-[var(--ink)] text-sm tracking-tight" x-text="lead.name"></div>
+                                    <div class="flex items-center gap-1.5 mt-1">
+                                        <span class="text-[10px] text-[var(--muted)]" x-text="lead.category || 'Bisnis'"></span>
+                                        <template x-if="lead.operational_status">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-[var(--surface-2)] border border-[var(--rule)] text-[var(--ink-2)]"
+                                                  x-text="lead.operational_status"></span>
+                                        </template>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <template x-if="lead.phone">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-figures text-[var(--ink)] text-xs" x-text="lead.phone"></span>
+                                            <template x-if="lead.whatsapp_url">
+                                                <a :href="lead.whatsapp_url" target="_blank"
+                                                   class="px-1.5 py-0.5 rounded bg-[#ecfdf5] text-[var(--ok)] border border-[#a7f3d0] text-[10px] font-medium hover:bg-[#d1fae5] transition" title="Kirim pesan WhatsApp">
+                                                    WA
+                                                </a>
+                                            </template>
+                                        </div>
+                                    </template>
+                                    <template x-if="!lead.phone">
+                                        <span class="text-[var(--faint)]">&mdash;</span>
+                                    </template>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <template x-if="lead.rating">
+                                        <div class="flex items-center gap-1">
+                                            <span class="font-heading font-semibold text-[var(--warn)] text-xs font-figures" x-text="lead.rating"></span>
+                                            <span class="text-[var(--muted)] text-[10px] font-figures">(<span x-text="lead.reviews_count"></span>)</span>
+                                        </div>
+                                    </template>
+                                    <template x-if="!lead.rating">
+                                        <span class="text-[var(--faint)]">&mdash;</span>
+                                    </template>
+                                </td>
+                                <td class="px-5 py-3.5">
+                                    <div class="space-y-1">
+                                        <template x-if="lead.website">
+                                            <div>
+                                                <a :href="lead.website" target="_blank" class="text-[var(--accent)] hover:underline inline-flex items-center gap-1 truncate max-w-[220px] text-xs">
+                                                    <i data-lucide="globe" class="w-3 h-3"></i> Situs web
+                                                </a>
+                                            </div>
+                                        </template>
+                                        <template x-if="lead.email">
+                                            <div class="text-[11px] text-[var(--ink-2)] font-figures truncate max-w-[220px]">
+                                                <span x-text="lead.email"></span>
+                                            </div>
+                                        </template>
+                                        <div class="flex items-center gap-2 pt-0.5">
+                                            <template x-if="lead.instagram">
+                                                <a :href="lead.instagram" target="_blank" class="text-pink-600 hover:underline text-[10px]">
+                                                    Instagram
+                                                </a>
+                                            </template>
+                                            <template x-if="lead.facebook">
+                                                <a :href="lead.facebook" target="_blank" class="text-blue-600 hover:underline text-[10px]">
+                                                    Facebook
+                                                </a>
+                                            </template>
+                                        </div>
+                                        <template x-if="!lead.website && !lead.email && !lead.instagram && !lead.facebook">
+                                            <span class="text-[var(--faint)]">&mdash;</span>
+                                        </template>
+                                    </div>
+                                </td>
+                                <td class="px-5 py-3.5 max-w-sm truncate text-[var(--ink-2)] text-xs" :title="lead.address" x-text="lead.address || '&mdash;'"></td>
+                                <td class="px-5 py-3.5 text-right">
+                                    <div class="flex items-center justify-end gap-1.5">
+                                        <template x-if="lead.google_maps_url">
+                                            <a :href="lead.google_maps_url" target="_blank"
+                                               class="inline-flex items-center justify-center w-7 h-7 rounded-[8px] bg-[var(--surface-2)] border border-[var(--rule)] hover:border-[var(--accent)] hover:text-[var(--accent)] text-[var(--ink-2)] transition" title="Buka Google Maps">
+                                                <i data-lucide="arrow-up-right" class="w-3.5 h-3.5"></i>
+                                            </a>
+                                        </template>
+                                        <button @click="deleteLead(lead.id, lead.name)"
+                                                class="inline-flex items-center justify-center w-7 h-7 rounded-[8px] bg-[var(--surface-2)] border border-[var(--rule)] hover:border-[var(--danger)] hover:text-[var(--danger)] text-[var(--muted)] transition" title="Hapus kontak ini">
+                                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+
+                        <template x-if="filteredLeads.length === 0">
+                            <tr>
+                                <td colspan="7" class="px-4 py-14 text-center text-[var(--muted)]">
+                                    <p class="font-heading text-sm text-[var(--ink)]">Belum ada data</p>
+                                    <p class="text-xs text-[var(--muted)] mt-1.5">Isi jenis usaha dan wilayah di formulir atas, atau klik "Buka riwayat DB".</p>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="p-3.5 border-t border-[var(--rule)] bg-[var(--surface-2)] flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div class="text-[var(--muted)] text-xs">
+                    Menampilkan <strong class="text-[var(--ink)] font-figures" x-text="pageStart"></strong> &ndash; <strong class="text-[var(--ink)] font-figures" x-text="pageEnd"></strong> dari <strong class="text-[var(--ink)] font-figures" x-text="filteredLeads.length"></strong> total data
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1.5 mr-2">
+                        <span class="text-[var(--muted)] text-[11px]">Tampilkan:</span>
+                        <select x-model.number="pageSize" @change="currentPage = 1"
+                                class="px-2 py-1 formwork-input text-xs font-figures cursor-pointer">
+                            <option :value="10">10</option>
+                            <option :value="20">20</option>
+                            <option :value="50">50</option>
+                            <option :value="100">100</option>
+                        </select>
+                    </div>
+
+                    <button @click="prevPage" :disabled="currentPage <= 1"
+                            class="px-2.5 py-1.5 btn-formwork-secondary text-xs flex items-center gap-1 disabled:opacity-30 disabled:pointer-events-none">
+                        <i data-lucide="chevron-left" class="w-3.5 h-3.5"></i> Sebelumnya
+                    </button>
+
+                    <div class="px-3 py-1.5 bg-[var(--surface)] border border-[var(--rule)] rounded-[8px] text-xs font-heading">
+                        Halaman <span class="text-[var(--accent)] font-figures" x-text="currentPage"></span> / <span class="font-figures" x-text="totalPages"></span>
+                    </div>
+
+                    <button @click="nextPage" :disabled="currentPage >= totalPages"
+                            class="px-2.5 py-1.5 btn-formwork-secondary text-xs flex items-center gap-1 disabled:opacity-30 disabled:pointer-events-none">
+                        Berikutnya <i data-lucide="chevron-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="w-full border-t border-[var(--rule)] py-4 px-6 lg:px-10 text-center text-[11px] text-[var(--muted)] bg-[var(--surface)]">
+        Aibis &bull; Mesin penelusur kontak bisnis Google Maps
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+        });
+        document.addEventListener('alpine:initialized', () => {
+            setInterval(() => { lucide.createIcons(); }, 1500);
+        });
+    </script>
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

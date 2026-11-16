@@ -1,0 +1,13 @@
+services:
+  aibis:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      AIBIS_DB_PATH: /data/leads_history.db
+    volumes:
+      - aibis-data:/data
+
+volumes:
+  aibis-data:

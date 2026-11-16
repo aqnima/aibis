@@ -1,0 +1,16 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+env
+leads_history.db
+output
+*.xlsx
+*.csv
+shots
+.hallmark
+.taste-skill
+node_modules

@@ -1,0 +1,3 @@
+# Desktop launcher deps (Windows only, not needed in the container)
+-r requirements.txt
+pywebview>=5.0
